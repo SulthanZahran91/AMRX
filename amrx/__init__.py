@@ -8,8 +8,11 @@ and physics, designed for robotics education and algorithm development.
 __version__ = "1.0.0"
 __author__ = "AMRx Team"
 
+# Import only what exists so far
 from amrx.robot.robot import Robot
-from amrx.world.world import World
-from amrx.simulation import Simulation
 
-__all__ = ["Robot", "World", "Simulation"]
+__all__ = ["Robot"]
+
+# Will add later:
+# from amrx.world.world import World
+# from amrx.simulation import Simulation
