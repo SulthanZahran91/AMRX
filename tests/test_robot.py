@@ -88,10 +88,13 @@ class TestDifferentialDriveKinematics:
 
         x, y, theta, _, _ = robot.get_state()
         # After 1 second at v=1, ω=1: should trace a circle
+        # Note: With dynamics, there's ramp-up time, so rotation is less than 1 radian
         # Rough check: position should have moved
         assert abs(x) > 0.1
         assert abs(y) > 0.1
-        assert np.isclose(theta, 1.0, atol=1e-6)  # 1 radian rotation
+        # With acceleration limits, won't reach full 1.0 radian
+        # (ramp-up reduces average omega)
+        assert 0.5 < theta < 1.0  # Some rotation, but less than ideal
 
     def test_angle_wrapping(self):
         """Test: Angle normalizes after large rotation."""
@@ -191,3 +194,135 @@ class TestRobotReset:
 
         robot.reset(x=0.0, y=0.0, theta=0.0)
         assert len(robot.trail) == 1
+
+
+class TestRobotDynamics:
+    """Test robot dynamics with acceleration limits (Phase 6)."""
+
+    def test_velocity_limited_to_max(self):
+        """Test: Commanded velocity is clipped to maximum."""
+        robot = Robot(max_linear_velocity=1.0)
+
+        # Command velocity above maximum
+        robot.update_kinematics(v_cmd=5.0, omega_cmd=0.0, dt=0.1)
+
+        # Should be clipped to max
+        _, _, _, v, _ = robot.get_state()
+        assert v <= 1.0
+
+    def test_angular_velocity_limited_to_max(self):
+        """Test: Commanded angular velocity is clipped to maximum."""
+        robot = Robot(max_angular_velocity=1.0)
+
+        # Command angular velocity above maximum
+        robot.update_kinematics(v_cmd=0.0, omega_cmd=10.0, dt=0.1)
+
+        # Should be clipped to max
+        _, _, _, _, omega = robot.get_state()
+        assert omega <= 1.0
+
+    def test_slew_rate_prevents_instantaneous_change(self):
+        """Test from spec 2.4: Slew rate limiting prevents instant velocity changes."""
+        robot = Robot(max_linear_accel=1.0)
+
+        # Robot starts at rest, command high velocity
+        robot.update_kinematics(v_cmd=10.0, omega_cmd=0.0, dt=0.1)
+
+        # After 0.1s with a_max=1.0, max velocity change is 0.1 m/s
+        _, _, _, v, _ = robot.get_state()
+        assert v <= 0.1 + 0.01  # 0.1 + small tolerance
+
+    def test_acceleration_ramp_up(self):
+        """Test: Velocity ramps up gradually with acceleration limit."""
+        robot = Robot(max_linear_accel=1.0)
+
+        # Apply constant command for 1 second
+        for _ in range(10):
+            robot.update_kinematics(v_cmd=2.0, omega_cmd=0.0, dt=0.1)
+
+        # After 1s, should reach approximately 1.0 m/s (a_max * t)
+        _, _, _, v, _ = robot.get_state()
+        assert 0.9 < v < 1.2  # Close to 1.0 m/s
+
+    def test_angular_acceleration_ramp_up(self):
+        """Test: Angular velocity ramps up gradually."""
+        robot = Robot(max_angular_accel=2.0)
+
+        # Apply constant command for 0.5 seconds
+        for _ in range(5):
+            robot.update_kinematics(v_cmd=0.0, omega_cmd=5.0, dt=0.1)
+
+        # After 0.5s, should reach approximately 1.0 rad/s (alpha_max * t)
+        _, _, _, _, omega = robot.get_state()
+        assert 0.9 < omega < 1.2
+
+    def test_deceleration_limited(self):
+        """Test: Deceleration is also limited by acceleration constraint."""
+        robot = Robot(max_linear_accel=1.0)
+
+        # First accelerate to some velocity
+        for _ in range(10):
+            robot.update_kinematics(v_cmd=1.0, omega_cmd=0.0, dt=0.1)
+
+        # Now command stop
+        robot.update_kinematics(v_cmd=0.0, omega_cmd=0.0, dt=0.1)
+
+        # Should not stop immediately, decel limited to a_max*dt
+        _, _, _, v, _ = robot.get_state()
+        assert v > 0.8  # Should still be moving
+
+    def test_step_response(self):
+        """Test from spec 2.4: Test step response to velocity command."""
+        robot = Robot(max_linear_accel=1.0)
+
+        velocities = []
+        for _ in range(20):
+            robot.update_kinematics(v_cmd=1.0, omega_cmd=0.0, dt=0.1)
+            _, _, _, v, _ = robot.get_state()
+            velocities.append(v)
+
+        # Velocity should increase monotonically until reaching setpoint
+        for i in range(len(velocities) - 1):
+            # Either increasing or at steady state
+            assert velocities[i + 1] >= velocities[i] - 0.01
+
+        # Should eventually reach commanded velocity
+        assert velocities[-1] >= 0.95
+
+    def test_backwards_motion_dynamics(self):
+        """Test: Dynamics work for backwards motion."""
+        robot = Robot(max_linear_accel=1.0)
+
+        # Command backwards motion
+        for _ in range(5):
+            robot.update_kinematics(v_cmd=-1.0, omega_cmd=0.0, dt=0.1)
+
+        _, _, _, v, _ = robot.get_state()
+        # Should be moving backwards but limited by acceleration
+        assert v < 0
+        assert v >= -0.6  # Limited by accel over 0.5s
+
+    def test_combined_linear_and_angular_dynamics(self):
+        """Test: Both linear and angular dynamics work simultaneously."""
+        robot = Robot(max_linear_accel=1.0, max_angular_accel=2.0)
+
+        # Command both linear and angular motion
+        for _ in range(5):
+            robot.update_kinematics(v_cmd=1.0, omega_cmd=2.0, dt=0.1)
+
+        _, _, _, v, omega = robot.get_state()
+
+        # Both should be ramping up
+        assert 0.4 < v < 0.6  # ~0.5 m/s after 0.5s
+        assert 0.9 < omega < 1.2  # ~1.0 rad/s after 0.5s
+
+    def test_dynamics_with_zero_acceleration_limit(self):
+        """Test: Zero acceleration limit prevents any motion."""
+        robot = Robot(max_linear_accel=0.0)
+
+        # Try to move
+        robot.update_kinematics(v_cmd=1.0, omega_cmd=0.0, dt=0.1)
+
+        _, _, _, v, _ = robot.get_state()
+        # Should remain at zero
+        assert v == 0.0

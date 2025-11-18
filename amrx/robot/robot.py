@@ -39,6 +39,10 @@ class Robot:
         wheel_base: float = 0.381,
         wheel_radius: float = 0.0975,
         collision_radius: float = 0.2,
+        max_linear_velocity: float = 1.2,
+        max_angular_velocity: float = 1.745,
+        max_linear_accel: float = 1.0,
+        max_angular_accel: float = 2.0,
     ):
         """
         Initialize robot at given pose.
@@ -50,6 +54,10 @@ class Robot:
             wheel_base: Distance between wheels (meters)
             wheel_radius: Radius of each wheel (meters)
             collision_radius: Robot bounding circle radius (meters)
+            max_linear_velocity: Maximum linear velocity (m/s)
+            max_angular_velocity: Maximum angular velocity (rad/s)
+            max_linear_accel: Maximum linear acceleration (m/s²)
+            max_angular_accel: Maximum angular acceleration (rad/s²)
         """
         # State variables
         self.x = x
@@ -63,30 +71,50 @@ class Robot:
         self.wheel_radius = wheel_radius
         self.collision_radius = collision_radius
 
+        # Dynamic constraints (Section 2.4)
+        self.v_max = max_linear_velocity
+        self.omega_max = max_angular_velocity
+        self.a_max = max_linear_accel
+        self.alpha_max = max_angular_accel
+
         # Store previous position for trail visualization
         self.trail = [(self.x, self.y)]
 
     def update_kinematics(self, v_cmd: float, omega_cmd: float, dt: float) -> None:
         """
-        Update robot state using differential drive kinematics.
+        Update robot state using differential drive kinematics with dynamics.
 
         Uses Euler integration (as per spec Section 2.2):
             x_{k+1} = x_k + v_k * cos(θ_k) * Δt
             y_{k+1} = y_k + v_k * sin(θ_k) * Δt
             θ_{k+1} = normalize(θ_k + ω_k * Δt)
 
-        Note: This is Phase 1 - no dynamics (acceleration limits) yet.
-        In Phase 6, we'll add slew rate limiting before this update.
+        Implementation order (Section 2.4):
+        1. Clip command to max velocities
+        2. Apply slew rate limit (acceleration constraints)
+        3. Update kinematics with achieved velocity (not commanded)
 
         Args:
             v_cmd: Commanded linear velocity (m/s)
             omega_cmd: Commanded angular velocity (rad/s)
             dt: Time step (seconds)
         """
-        # Phase 1: Direct command application (no dynamics)
-        self.v = v_cmd
-        self.omega = omega_cmd
+        # Step 1: Clip to maximum velocities
+        v_cmd = np.clip(v_cmd, -self.v_max, self.v_max)
+        omega_cmd = np.clip(omega_cmd, -self.omega_max, self.omega_max)
 
+        # Step 2: Apply slew rate limiting (acceleration constraints)
+        # Linear velocity
+        dv_max = self.a_max * dt  # Maximum velocity change this timestep
+        dv = np.clip(v_cmd - self.v, -dv_max, dv_max)
+        self.v += dv
+
+        # Angular velocity
+        domega_max = self.alpha_max * dt  # Maximum angular velocity change
+        domega = np.clip(omega_cmd - self.omega, -domega_max, domega_max)
+        self.omega += domega
+
+        # Step 3: Update kinematics with achieved velocity
         # Euler integration
         self.x += self.v * np.cos(self.theta) * dt
         self.y += self.v * np.sin(self.theta) * dt
