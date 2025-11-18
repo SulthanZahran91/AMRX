@@ -1,0 +1,17 @@
+{
+  "name": "Empty Box",
+  "description": "10m x 10m rectangular boundary for basic odometry and Kalman filter tuning",
+  "walls": [
+    {"start": [0, 0], "end": [10, 0]},
+    {"start": [10, 0], "end": [10, 10]},
+    {"start": [10, 10], "end": [0, 10]},
+    {"start": [0, 10], "end": [0, 0]}
+  ],
+  "landmarks": [
+    {"pos": [1, 1], "radius": 0.1, "sig": 0},
+    {"pos": [9, 1], "radius": 0.1, "sig": 1},
+    {"pos": [9, 9], "radius": 0.1, "sig": 2},
+    {"pos": [1, 9], "radius": 0.1, "sig": 3}
+  ],
+  "robot_start": {"x": 5.0, "y": 5.0, "theta": 0.0}
+}

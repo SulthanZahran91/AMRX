@@ -1,0 +1,19 @@
+{
+  "name": "Corridor",
+  "description": "10m x 3m hallway with pillars for line following and feature tracking",
+  "walls": [
+    {"start": [0, 0], "end": [10, 0]},
+    {"start": [10, 0], "end": [10, 3]},
+    {"start": [10, 3], "end": [0, 3]},
+    {"start": [0, 3], "end": [0, 0]}
+  ],
+  "landmarks": [
+    {"pos": [1.0, 1.5], "radius": 0.1, "sig": 0},
+    {"pos": [2.8, 1.5], "radius": 0.1, "sig": 1},
+    {"pos": [4.6, 1.5], "radius": 0.1, "sig": 2},
+    {"pos": [6.4, 1.5], "radius": 0.1, "sig": 3},
+    {"pos": [8.2, 1.5], "radius": 0.1, "sig": 4},
+    {"pos": [10.0, 1.5], "radius": 0.1, "sig": 5}
+  ],
+  "robot_start": {"x": 0.5, "y": 1.5, "theta": 0.0}
+}
